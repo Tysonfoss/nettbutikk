@@ -1,79 +1,72 @@
 <?php
+// Start sesjon og koble til databasen
 session_start();
+require_once 'db_config.php';
 
-$servername = "localhost";
-$username = "root";
-$password = "root";
-$dbname = "nynettbutikk";
-
-$conn = new mysqli($servername, $username, $password, $dbname);
-if ($conn->connect_error) {
-    die("Tilkobling mislyktes: " . $conn->connect_error);
-}
-$conn->set_charset("utf8");
-
-// Håndter oppdatering av handlekurv
-if (isset($_POST['oppdater'])) {
-    $error = false;
-    foreach ($_POST['antall'] as $id => $antall) {
+// Håndter oppdatering av antall varer i handlekurven
+// Dette skjer når brukeren endrer antall eller oppdaterer handlekurven
+if (isset($_POST['oppdater']) && isset($_POST['antall'])) {
+    foreach ($_POST['antall'] as $vareId => $antall) {
         if ($antall > 0) {
-            // Sjekk lagerbeholdning
-            $sql = "SELECT lagerbeholdning FROM Produkt WHERE ProduktID = ?";
-            $stmt = $conn->prepare($sql);
-            $stmt->bind_param("i", $id);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            $produkt = $result->fetch_assoc();
+            // Sjekk om det er nok varer på lager før oppdatering
+            $sporring = $db->query("SELECT lagerbeholdning FROM Produkt WHERE ProduktID = $vareId");
+            $vare = $sporring->fetch_assoc();
             
-            if ($produkt && $produkt['lagerbeholdning'] >= $antall) {
-                $_SESSION['handlekurv'][$id] = $antall;
+            // Hvis varen finnes og det er nok på lager, oppdater antallet
+            if ($vare && $vare['lagerbeholdning'] >= $antall) {
+                $_SESSION['handlekurv'][$vareId] = $antall;
             } else {
-                $error = true;
-                $_SESSION['error_message'] = "Beklager, ikke nok på lager for noen produkter. Mengden har blitt justert.";
-                if ($produkt) {
-                    $_SESSION['handlekurv'][$id] = $produkt['lagerbeholdning'];
-                } else {
-                    unset($_SESSION['handlekurv'][$id]);
-                }
+                // Hvis ikke nok på lager, sett antall til maksimum tilgjengelig
+                $_SESSION['handlekurv'][$vareId] = $vare ? $vare['lagerbeholdning'] : 0;
+                $_SESSION['feilmelding'] = "Noen varer hadde ikke nok på lager. Mengden er justert.";
             }
         } else {
-            unset($_SESSION['handlekurv'][$id]);
+            // Hvis antall er 0 eller negativt, fjern varen fra handlekurven
+            unset($_SESSION['handlekurv'][$vareId]);
         }
     }
-    if (!$error) {
-        $_SESSION['success_message'] = "Handlekurven er oppdatert.";
-    }
+    $_SESSION['suksessmelding'] = "Handlekurven er oppdatert.";
     header("Location: handlekurv.php");
     exit();
 }
 
-// Fjern produkt fra handlekurv
-if (isset($_POST['fjern_produkt'])) {
-    $id = $_POST['produkt_id'];
-    unset($_SESSION['handlekurv'][$id]);
+// Håndter fjerning av enkeltvarer fra handlekurven
+// Dette skjer når brukeren klikker på søppelkasse-ikonet
+if (isset($_POST['fjern_vare']) && isset($_POST['vare_id'])) {
+    unset($_SESSION['handlekurv'][$_POST['vare_id']]);
+    $_SESSION['suksessmelding'] = "Varen er fjernet fra handlekurven.";
     header("Location: handlekurv.php");
     exit();
 }
 
-// Beregn total og hent produktinformasjon
-$total = 0;
-$handlekurv_produkter = [];
+// Initialiser arrays for varer og total sum
+$varer = array();
+$totalSum = 0;
 
+// Hvis handlekurven ikke er tom, hent informasjon om alle varene
 if (!empty($_SESSION['handlekurv'])) {
-    $produkt_ids = array_keys($_SESSION['handlekurv']);
-    $ids_string = implode(',', array_map('intval', $produkt_ids));
+    // Lag en kommaseparert liste av alle vare-IDer i handlekurven
+    $vareIds = array_keys($_SESSION['handlekurv']);
+    $vareIdsStr = implode(',', $vareIds);
     
-    $sql = "SELECT ProduktID, navn, Pris, info, lagerbeholdning FROM Produkt WHERE ProduktID IN ($ids_string)";
-    $result = $conn->query($sql);
+    // Hent detaljert informasjon om hver vare fra databasen
+    $sporring = $db->query("SELECT ProduktID, navn, Pris, lagerbeholdning FROM Produkt WHERE ProduktID IN ($vareIdsStr)");
     
-    if ($result->num_rows > 0) {
-        while ($row = $result->fetch_assoc()) {
-            $antall = $_SESSION['handlekurv'][$row['ProduktID']];
-            $row['antall'] = $antall;
-            $row['sum'] = $antall * (float)$row['Pris'];
-            $total += $row['sum'];
-            $handlekurv_produkter[] = $row;
-        }
+    // Beregn delsum for hver vare og legg til i vare-arrayet
+    while ($vare = $sporring->fetch_assoc()) {
+        $antall = $_SESSION['handlekurv'][$vare['ProduktID']];
+        $delsum = $vare['Pris'] * $antall;
+        $totalSum += $delsum;
+        
+        // Lagre all nødvendig informasjon om varen for visning
+        $varer[] = array(
+            'id' => $vare['ProduktID'],
+            'navn' => $vare['navn'],
+            'pris' => $vare['Pris'],
+            'antall' => $antall,
+            'delsum' => $delsum,
+            'lagerbeholdning' => $vare['lagerbeholdning']
+        );
     }
 }
 ?>
@@ -83,13 +76,13 @@ if (!empty($_SESSION['handlekurv'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Handlekurv</title>
+    <title>Handlekurv - Nettbutikk</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <!-- Navigasjon -->
+    <!-- Navigasjonsmeny -->
     <nav class="navbar navbar-expand-lg navbar-dark">
         <div class="container-fluid px-2">
             <a class="navbar-brand" href="index.php">Nettbutikk</a>
@@ -102,9 +95,6 @@ if (!empty($_SESSION['handlekurv'])) {
                         <a class="nav-link" href="index.php">Hjem</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="produkter.php">Produkter</a>
-                    </li>
-                    <li class="nav-item">
                         <a class="nav-link active" href="handlekurv.php">Handlekurv</a>
                     </li>
                     <?php if (isset($_SESSION['KundeID'])): ?>
@@ -112,7 +102,7 @@ if (!empty($_SESSION['handlekurv'])) {
                             <a class="nav-link" href="profil.php">Min Profil</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="legg_til_produkt.php">Legg til produkt</a>
+                            <a class="nav-link" href="alle_bestillinger.php">Bestillinger</a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="loggut.php">Logg ut</a>
@@ -130,93 +120,93 @@ if (!empty($_SESSION['handlekurv'])) {
         </div>
     </nav>
 
+    <!-- Hovedinnhold -->
     <div class="container my-5">
         <h1 class="mb-4">Din Handlekurv</h1>
         
-        <?php if (isset($_SESSION['error_message'])): ?>
+        <?php if (isset($_SESSION['feilmelding'])): ?>
             <div class="alert alert-danger alert-dismissible fade show" role="alert">
                 <?php 
-                echo $_SESSION['error_message'];
-                unset($_SESSION['error_message']);
+                echo $_SESSION['feilmelding'];
+                unset($_SESSION['feilmelding']);
                 ?>
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Lukk"></button>
             </div>
         <?php endif; ?>
         
-        <?php if (isset($_SESSION['success_message'])): ?>
+        <?php if (isset($_SESSION['suksessmelding'])): ?>
             <div class="alert alert-success alert-dismissible fade show" role="alert">
                 <?php 
-                echo $_SESSION['success_message'];
-                unset($_SESSION['success_message']);
+                echo $_SESSION['suksessmelding'];
+                unset($_SESSION['suksessmelding']);
                 ?>
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Lukk"></button>
             </div>
         <?php endif; ?>
-        
-        <?php if (!empty($handlekurv_produkter)): ?>
-            <form method="post" action="" class="cart-form">
-                <?php foreach ($handlekurv_produkter as $produkt): ?>
-                    <div class="cart-item">
-                        <div class="row align-items-center">
-                            <div class="col-md-6">
-                                <h5 class="mb-1"><?php echo htmlspecialchars($produkt['navn']); ?></h5>
-                                <p class="text-muted mb-0"><?php echo htmlspecialchars($produkt['info']); ?></p>
-                            </div>
-                            <div class="col-md-2">
-                                <span class="text-muted">kr <?php echo number_format($produkt['Pris'], 2, ',', ' '); ?></span>
-                            </div>
-                            <div class="col-md-2">
-                                <input type="number" name="antall[<?php echo $produkt['ProduktID']; ?>]" 
-                                       value="<?php echo $produkt['antall']; ?>" 
-                                       min="0" class="form-control quantity-input">
-                            </div>
-                            <div class="col-md-1">
-                                <span class="product-total">kr <?php echo number_format($produkt['sum'], 2, ',', ' '); ?></span>
-                            </div>
-                            <div class="col-md-1 text-end">
-                                <!-- Flyttet slett-knappen ut av hovedformen -->
-                                <form method="post" action="" class="d-inline">
-                                    <input type="hidden" name="produkt_id" value="<?php echo $produkt['ProduktID']; ?>">
-                                    <button type="submit" name="fjern_produkt" class="btn-remove" title="Fjern produkt">
-                                        <i class="bi bi-trash"></i>
-                                    </button>
-                                </form>
-                            </div>
-                        </div>
-                    </div>
-                <?php endforeach; ?>
+
+        <?php if (empty($varer)): ?>
+            <div class="alert alert-info">
+                Handlekurven din er tom.
+            </div>
+            <a href="index.php" class="btn btn-primary">Fortsett å handle</a>
+        <?php else: ?>
+            <form method="post" action="">
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Vare</th>
+                                <th>Pris</th>
+                                <th>Antall</th>
+                                <th>Sum</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($varer as $vare): ?>
+                                <tr>
+                                    <td><?php echo htmlspecialchars($vare['navn']); ?></td>
+                                    <td><?php echo number_format($vare['pris'], 2, ',', ' '); ?> kr</td>
+                                    <td>
+                                        <input type="number" name="antall[<?php echo $vare['id']; ?>]" 
+                                               value="<?php echo $vare['antall']; ?>" 
+                                               min="0" max="<?php echo $vare['lagerbeholdning']; ?>" 
+                                               class="form-control" style="width: 80px;">
+                                    </td>
+                                    <td><?php echo number_format($vare['delsum'], 2, ',', ' '); ?> kr</td>
+                                    <td>
+                                        <form method="post" style="display: inline;">
+                                            <input type="hidden" name="vare_id" value="<?php echo $vare['id']; ?>">
+                                            <button type="submit" name="fjern_vare" class="btn btn-danger btn-sm">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td colspan="3" class="text-end"><strong>Total:</strong></td>
+                                <td><strong><?php echo number_format($totalSum, 2, ',', ' '); ?> kr</strong></td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
                 
-                <div class="row mt-4">
-                    <div class="col-md-6">
-                        <button type="submit" name="oppdater" class="btn btn-primary">
-                            <i class="bi bi-arrow-clockwise"></i> Oppdater handlekurv
-                        </button>
-                    </div>
-                    <div class="col-md-6 text-end">
-                        <div class="cart-total mb-3">
-                            Totalt: kr <?php echo number_format($total, 2, ',', ' '); ?>
-                        </div>
+                <div class="d-flex justify-content-between mt-3">
+                    <a href="index.php" class="btn btn-secondary">Fortsett å handle</a>
+                    <div>
+                        <button type="submit" name="oppdater" class="btn btn-primary me-2">Oppdater handlekurv</button>
                         <?php if (isset($_SESSION['KundeID'])): ?>
-                            <a href="kasse.php" class="btn btn-success btn-lg">
-                                <i class="bi bi-credit-card"></i> Gå til kassen
-                            </a>
+                            <a href="kasse.php" class="btn btn-success">Gå til kassen</a>
                         <?php else: ?>
-                            <a href="logginn.php" class="btn btn-primary">
-                                Logg inn for å bestille <i class="bi bi-arrow-right"></i>
-                            </a>
+                            <a href="logginn.php" class="btn btn-success">Logg inn for å handle</a>
                         <?php endif; ?>
                     </div>
                 </div>
             </form>
-        <?php else: ?>
-            <div class="empty-cart">
-                <i class="bi bi-cart-x"></i>
-                <h3>Handlekurven er tom</h3>
-                <p class="text-muted">Du har ingen produkter i handlekurven din.</p>
-                <a href="index.php" class="btn btn-primary">
-                    <i class="bi bi-shop"></i> Fortsett å handle
-                </a>
-            </div>
         <?php endif; ?>
     </div>
 

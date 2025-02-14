@@ -1,16 +1,6 @@
 <?php
 session_start();
-
-$servername = "localhost";
-$username = "root";
-$password = "root";
-$dbname = "nynettbutikk";
-
-$conn = new mysqli($servername, $username, $password, $dbname);
-if ($conn->connect_error) {
-    die("Tilkobling mislyktes: " . $conn->connect_error);
-}
-$conn->set_charset("utf8");
+require_once 'db_config.php';
 
 $error = "";
 $success = "";
@@ -19,30 +9,24 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $navn = $_POST['navn'];
     $etternavn = $_POST['etternavn'];
     $epost = $_POST['epost'];
-    $passord = $_POST['passord'];
+    $passord = password_hash($_POST['passord'], PASSWORD_BCRYPT);
     $adressa = $_POST['adressa'];
     $postnummer = $_POST['postnummer'];
     $poststad = $_POST['poststad'];
     
     // Sjekk om e-post allerede eksisterer
-    $sql = "SELECT KundeID FROM kunde WHERE Epost = ?";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("s", $epost);
-    $stmt->execute();
-    $result = $stmt->get_result();
+    $resultat = $db->query("SELECT KundeID FROM kunde WHERE Epost = '$epost'");
     
-    if ($result->num_rows > 0) {
+    if ($resultat->num_rows > 0) {
         $error = "E-postadressen er allerede registrert";
     } else {
-        // Legg til ny kunde
-        $sql = "INSERT INTO kunde (Navn, etternavn, Epost, Passord, adressa, postnummer, poststad) VALUES (?, ?, ?, ?, ?, ?, ?)";
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param("sssssss", $navn, $etternavn, $epost, $passord, $adressa, $postnummer, $poststad);
+        $sql = "INSERT INTO kunde (Navn, etternavn, Epost, Passord, adressa, postnummer, poststad) 
+                VALUES ('$navn', '$etternavn', '$epost', '$passord', '$adressa', '$postnummer', '$poststad')";
         
-        if ($stmt->execute()) {
+        if ($db->query($sql)) {
             $success = "Registrering vellykket! Du kan nå logge inn.";
         } else {
-            $error = "Det oppstod en feil under registrering: " . $conn->error;
+            $error = "Det oppstod en feil under registrering: " . $db->error;
         }
     }
 }
@@ -53,7 +37,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Registrer ny bruker</title>
+    <title>Registrer ny bruker - Nettbutikk</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
     <link rel="stylesheet" href="style.css">
@@ -91,59 +75,55 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     <div class="card-body">
                         <h2 class="card-title text-center mb-4">Registrer ny bruker</h2>
                         
-                        <?php if ($error): ?>
-                            <div class="alert alert-danger"><?php echo $error; ?></div>
+                        <?php if (isset($error) && $error != ""): ?>
+                            <div class="alert alert-danger"><?= $error ?></div>
                         <?php endif; ?>
                         
-                        <?php if ($success): ?>
+                        <?php if (isset($success) && $success != ""): ?>
                             <div class="alert alert-success">
-                                <?php echo $success; ?>
+                                <?= $success ?>
                                 <br>
-                                <a href="logginn.php" class="alert-link">Gå til innlogging</a>
+                                <a href="logginn.php" class="alert-link">Klikk her for å logge inn</a>
                             </div>
                         <?php else: ?>
-                            <form method="POST" action="">
+                            <form method="post" action="">
                                 <div class="mb-3">
-                                    <label for="navn" class="form-label">Navn</label>
+                                    <label for="navn" class="form-label">Fornavn</label>
                                     <input type="text" class="form-control" id="navn" name="navn" required>
                                 </div>
-                                
                                 <div class="mb-3">
                                     <label for="etternavn" class="form-label">Etternavn</label>
                                     <input type="text" class="form-control" id="etternavn" name="etternavn" required>
                                 </div>
-                                
                                 <div class="mb-3">
                                     <label for="epost" class="form-label">E-post</label>
                                     <input type="email" class="form-control" id="epost" name="epost" required>
                                 </div>
-                                
                                 <div class="mb-3">
                                     <label for="passord" class="form-label">Passord</label>
                                     <input type="password" class="form-control" id="passord" name="passord" required>
                                 </div>
-                                
                                 <div class="mb-3">
                                     <label for="adressa" class="form-label">Adresse</label>
                                     <input type="text" class="form-control" id="adressa" name="adressa" required>
                                 </div>
-                                
                                 <div class="mb-3">
                                     <label for="postnummer" class="form-label">Postnummer</label>
                                     <input type="text" class="form-control" id="postnummer" name="postnummer" required>
                                 </div>
-                                
                                 <div class="mb-3">
                                     <label for="poststad" class="form-label">Poststed</label>
                                     <input type="text" class="form-control" id="poststad" name="poststad" required>
                                 </div>
-                                
-                                <div class="d-grid gap-2">
+                                <div class="d-grid">
                                     <button type="submit" class="btn btn-primary">Registrer</button>
-                                    <a href="logginn.php" class="btn btn-link">Har du allerede en konto? Logg inn</a>
                                 </div>
                             </form>
                         <?php endif; ?>
+                        
+                        <div class="text-center mt-3">
+                            <p>Har du allerede en konto? <a href="logginn.php">Logg inn her</a></p>
+                        </div>
                     </div>
                 </div>
             </div>

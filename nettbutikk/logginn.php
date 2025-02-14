@@ -1,39 +1,32 @@
 <?php
+// Start sesjon og koble til databasen
 session_start();
+require_once 'db_config.php';
 
-$servername = "localhost";
-$username = "root";
-$password = "root";
-$dbname = "nynettbutikk";
-
-$conn = new mysqli($servername, $username, $password, $dbname);
-if ($conn->connect_error) {
-    die("Tilkobling mislyktes: " . $conn->connect_error);
-}
-$conn->set_charset("utf8");
-
+// Variabel for å lagre feilmeldinger
 $error = "";
 
+// Håndter innloggingsforsøk
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $epost = $_POST['epost'];
     $passord = $_POST['passord'];
     
-    $sql = "SELECT KundeID, Navn, etternavn FROM kunde WHERE Epost = ? AND Passord = ?";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("ss", $epost, $passord);
-    $stmt->execute();
-    $result = $stmt->get_result();
+    // Sjekk om brukeren eksisterer i databasen
+    $resultat = $db->query("SELECT KundeID, Navn, etternavn, Passord FROM kunde WHERE Epost = '$epost'");
     
-    if ($result->num_rows > 0) {
-        $kunde = $result->fetch_assoc();
-        $_SESSION['KundeID'] = $kunde['KundeID'];
-        $_SESSION['Navn'] = $kunde['Navn'];
-        $_SESSION['Etternavn'] = $kunde['etternavn'];
-        header("Location: index.php");
-        exit();
-    } else {
-        $error = "Feil e-post eller passord";
+    if ($resultat->num_rows > 0) {
+        $kunde = $resultat->fetch_assoc();
+        // Verifiser at passordet er korrekt
+        if (password_verify($passord, $kunde['Passord'])) {
+            // Lagre brukerinfo i sesjonen
+            $_SESSION['KundeID'] = $kunde['KundeID'];
+            $_SESSION['Navn'] = $kunde['Navn'];
+            $_SESSION['Etternavn'] = $kunde['etternavn'];
+            header("Location: index.php");
+            exit();
+        }
     }
+    $error = "Feil e-post eller passord";
 }
 ?>
 
@@ -42,7 +35,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Logg inn</title>
+    <title>Logg inn - Nettbutikk</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
     <link rel="stylesheet" href="style.css">
@@ -80,27 +73,27 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     <div class="card-body">
                         <h2 class="card-title text-center mb-4">Logg inn</h2>
                         
-                        <?php if ($error): ?>
-                            <div class="alert alert-danger"><?php echo $error; ?></div>
+                        <?php if (!empty($error)): ?>
+                            <div class="alert alert-danger"><?= $error ?></div>
                         <?php endif; ?>
-                        
-                        <form method="POST" action="">
+
+                        <form method="post" action="">
                             <div class="mb-3">
                                 <label for="epost" class="form-label">E-post</label>
                                 <input type="email" class="form-control" id="epost" name="epost" required>
                             </div>
-                            
                             <div class="mb-3">
                                 <label for="passord" class="form-label">Passord</label>
                                 <input type="password" class="form-control" id="passord" name="passord" required>
                             </div>
-                            
-                            <div class="d-grid gap-2">
+                            <div class="d-grid">
                                 <button type="submit" class="btn btn-primary">Logg inn</button>
-                                <a href="registrer.php" class="btn btn-secondary">Registrer ny bruker</a>
-                                <a href="index.php" class="btn btn-link">Tilbake til forsiden</a>
                             </div>
                         </form>
+                        
+                        <div class="text-center mt-3">
+                            <p>Har du ikke en konto? <a href="registrer.php">Registrer deg her</a></p>
+                        </div>
                     </div>
                 </div>
             </div>
