@@ -1,13 +1,13 @@
 <?php
 // Database tilkoblingsdetaljer
-$tjenerNavn = "localhost";
-$brukerNavn = "root";
+$hostNavn = "localhost";
+$userNavn = "root";
 $passord = "root";
-$databaseNavn = "nynettbutikk";
+$database = "nynettbutikk";
 
 try {
     // Opprett databasetilkobling
-    $db = new mysqli($tjenerNavn, $brukerNavn, $passord, $databaseNavn);
+    $db = new mysqli($hostNavn, $userNavn, $passord, $database);
     $db->set_charset("utf8mb4");
 
     // Sjekk om bilde-kolonnen eksisterer, hvis ikke, legg den til
